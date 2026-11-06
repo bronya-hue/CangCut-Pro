@@ -29,74 +29,97 @@ async function registerCapCut(email, accountPassword) {
       timeout: 60000,
     });
 
-    // Tunggu React render
-    await delay(8000);
-
-    // 1. Coba cari iframe dan beralih ke dalamnya jika ada
-    for (const frame of page.mainFrame().childFrames()) {
-      const url = frame.url();
-      if (url.includes('login') || url.includes('signup') || url.includes('auth')) {
-        await frame.evaluate(() => {
-          const elements = Array.from(document.querySelectorAll('button, a, div, span, p'));
-          const target = elements.find(el => {
-            const text = el.innerText ? el.innerText.toLowerCase() : '';
-            return text.includes('email') || text.includes('continue');
-          });
-          if (target) target.click();
-        }).catch(() => {});
-      }
-    }
-
-    // 2. Klik paksa di frame utama (jika form tidak di iframe)
-    await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('button, a, div, span, p'));
-      const target = elements.find(el => {
-        const text = el.innerText ? el.innerText.toLowerCase() : '';
-        return text.includes('email') || 
-               text.includes('other login') || 
-               text.includes('more options') || 
-               text.includes('continue with');
-      });
-      if (target) target.click();
-    }).catch(() => {});
-
+    // Tunggu modal "Welcome to CapCut" muncul sepenuhnya
+    await page.waitForSelector('button', { timeout: 30000 });
     await delay(3000);
 
-    // 3. Cari input email (termasuk di dalam iframe)
-    let emailInput = null;
-    try {
-      emailInput = await page.waitForSelector(
-        'input[type="email"], input[name="email"], input[placeholder*="email" i], ' +
-        'input[autocomplete="email"], input[name="mobileOrEmail"], input[type="text"][placeholder*="Email" i]',
-        { timeout: 15000, visible: true }
-      );
-    } catch (e) {
-      // Jika gagal di main frame, coba cari di semua iframe
-      for (const frame of page.mainFrame().childFrames()) {
-        try {
-          emailInput = await frame.waitForSelector(
-            'input[type="email"], input[name="email"], input[placeholder*="email" i], input[name="mobileOrEmail"]',
-            { timeout: 5000, visible: true }
-          );
-          if (emailInput) break;
-        } catch (_) {}
+    // Klik tombol "Continue with email" secara spesifik menggunakan teks persis
+    const clicked = await page.evaluate(() => {
+      // Cari semua button, lalu filter yang teksnya persis "Continue with email"
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const target = buttons.find(btn => {
+        const text = btn.innerText ? btn.innerText.trim() : '';
+        return text === 'Continue with email';
+      });
+      
+      if (target) {
+        target.click();
+        return true;
       }
-      if (!emailInput) throw e; // Lemparkan error asli jika semua iframe gagal
+      
+      // Fallback: jika tidak ketemu, cari elemen apa pun yang mengandung teks tersebut
+      const allElements = Array.from(document.querySelectorAll('*'));
+      const fallbackTarget = allElements.find(el => {
+        const text = el.innerText ? el.innerText.trim() : '';
+        return text === 'Continue with email' && el.tagName !== 'HTML' && el.tagName !== 'BODY';
+      });
+      
+      if (fallbackTarget) {
+        fallbackTarget.click();
+        return true;
+      }
+      
+      return false;
+    });
+
+    if (!clicked) {
+      throw new Error('Tombol "Continue with email" tidak ditemukan di halaman.');
     }
 
+    // Tunggu form email muncul (biasanya muncul di tempat yang sama setelah klik)
+    await delay(3000);
+
+    // Gunakan waitForFunction untuk memastikan input email benar-benar ada di DOM
+    await page.waitForFunction(() => {
+      return document.querySelector('input[type="email"]') !== null ||
+             document.querySelector('input[name="email"]') !== null ||
+             document.querySelector('input[name="mobileOrEmail"]') !== null ||
+             document.querySelector('input[placeholder*="Email" i]') !== null;
+    }, { timeout: 15000 });
+
+    // Dapatkan elemen input email yang pertama terlihat
+    const emailInput = await page.evaluateHandle(() => {
+      const selectors = [
+        'input[type="email"]',
+        'input[name="email"]',
+        'input[name="mobileOrEmail"]',
+        'input[placeholder*="Email" i]'
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el && el.offsetParent !== null) return el; // pastikan terlihat
+      }
+      return null;
+    });
+
+    if (!emailInput) {
+      throw new Error('Form input email tidak muncul setelah mengklik tombol.');
+    }
+
+    // Ketik email
     await emailInput.click({ clickCount: 3 });
     await emailInput.type(email.address, { delay: 80 });
 
+    // Cari input password (biasanya muncul bersamaan)
     const pwdInput = await page.$('input[type="password"]');
-    if (pwdInput) await pwdInput.type(accountPassword, { delay: 80 });
+    if (pwdInput) {
+      await pwdInput.click({ clickCount: 3 });
+      await pwdInput.type(accountPassword, { delay: 80 });
+    }
 
-    const submitBtn = await page.$(
-      'button[type="submit"], button::-p-text(Sign up), button::-p-text(Continue), button::-p-text(Next)'
-    );
-    if (submitBtn) await submitBtn.click();
+    // Klik tombol submit/continue berikutnya
+    await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const target = buttons.find(btn => {
+        const text = btn.innerText ? btn.innerText.toLowerCase() : '';
+        return text.includes('continue') || text.includes('sign up') || text.includes('next');
+      });
+      if (target) target.click();
+    });
 
     await delay(5000);
 
+    // Cek apakah perlu OTP
     const otpInput = await page.$(
       'input[autocomplete="one-time-code"], input[name*="otp"], input[name*="code"]'
     );
@@ -112,12 +135,8 @@ async function registerCapCut(email, accountPassword) {
     const currentUrl = page.url();
     const screenshotPath = `/tmp/capcut-fail-${Date.now()}.png`;
     
-    // Ambil Screenshot
     await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-    
-    // Ambil Teks di layar untuk diagnosa
     const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
-    
     await browser.close().catch(() => {});
     
     const newErr = new Error(`${err.message} | URL: ${currentUrl}\n\nTeks di layar:\n"${bodyText.replace(/\n/g, ' ').substring(0, 200)}..."`);
