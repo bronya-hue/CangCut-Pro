@@ -1,9 +1,8 @@
-# Dockerfile
 FROM node:20-slim
 
-# Instal Chromium + dependensi sistem untuk Puppeteer
+# JANGAN install chromium via apt — biarkan Puppeteer unduh sendiri
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
+    ca-certificates \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -26,10 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --omit=dev
+# HAPUS PUPPETEER_SKIP_CHROMIUM_DOWNLOAD agar Puppeteer unduh Chromium-nya
+RUN npm ci --omit=dev
 COPY . .
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
+# JANGAN set PUPPETEER_EXECUTABLE_PATH
 CMD ["node", "index.js"]
