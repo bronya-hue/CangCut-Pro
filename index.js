@@ -121,10 +121,18 @@ async function runFarm(chatId, count) {
           `✅ *Akun ${i + 1}/${count}*\n📧 \`${res.email}\`\n🔑 \`${res.password}\`\n⭐ ${res.proUntil ? 'Pro aktif' : 'Free'} (${sisa} hari)`,
           { parse_mode: 'Markdown' }
         );
-      } catch (err) {
+            } catch (err) {
         await bot.sendMessage(chatId, `❌ Akun ${i + 1}/${count} gagal: ${err.message}`);
+        
+        // Jika error membawa screenshot, kirim ke Telegram
+        if (err.screenshotPath) {
+          await bot.sendPhoto(chatId, err.screenshotPath, {
+            caption: '📸 Diagnostik: Ini yang dilihat bot di dalam server Railway.'
+          }).catch((e) => console.error('Gagal kirim foto:', e.message));
+        }
       }
-    }
+      }
+    
   } finally {
     farmInProgress = false;
   }
