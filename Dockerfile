@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY package*.json ./
 # HAPUS PUPPETEER_SKIP_CHROMIUM_DOWNLOAD agar Puppeteer unduh Chromium-nya
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 COPY . .
 
 # JANGAN set PUPPETEER_EXECUTABLE_PATH
