@@ -1,17 +1,14 @@
 // config.js
 module.exports = {
-  BOT_TOKEN: process.env.BOT_TOKEN || 'ISI_TOKEN_BOT_TELEGRAM_ANDA',
-  // Temp mail service: 'mailtm' (default) atau 'tempmail'
+  BOT_TOKEN: process.env.BOT_TOKEN || 'ISI_TOKEN',
   TEMPMAIL_PROVIDER: process.env.TEMPMAIL_PROVIDER || 'mailtm',
-  // Jumlah maksimal akun yang dibuat per perintah /farm
-  MAX_FARM_BATCH: parseInt(process.env.MAX_FARM_BATCH || '5', 10),
-  // Jeda antar pembuatan akun (ms) untuk menghindari rate limit
-  FARM_DELAY_MS: parseInt(process.env.FARM_DELAY_MS || '8000', 10),
-  // Mode headless untuk Puppeteer
+  MAX_FARM_BATCH: parseInt(process.env.MAX_FARM_BATCH || '3', 10), // Railway free tier RAM 1 GB — jangan batch besar
+  FARM_DELAY_MS: parseInt(process.env.FARM_DELAY_MS || '15000', 10), // lebih konservatif di cloud
   HEADLESS: process.env.HEADLESS !== 'false',
-  // Timeout OTP (ms)
-  OTP_TIMEOUT_MS: parseInt(process.env.OTP_TIMEOUT_MS || '120000', 10),
-  // URL dasar CapCut
+  OTP_TIMEOUT_MS: parseInt(process.env.OTP_TIMEOUT_MS || '180000', 10),
   CAPCUT_BASE: 'https://www.capcut.com',
   CAPCUT_API: 'https://api.capcut.com',
+  // Jika di Railway, isi dengan path Chromium Nix (lihat nixpacks.toml)
+  // Jika kosong, Puppeteer memakai Chromium bundled (lokal)
+  CHROME_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
 };
