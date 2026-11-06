@@ -30,92 +30,52 @@ async function registerCapCut(email, accountPassword) {
     });
 
     // Tunggu modal "Welcome to CapCut" muncul sepenuhnya
-    await page.waitForSelector('button', { timeout: 30000 });
-    await delay(3000);
+    await delay(6000);
 
-    // Klik tombol "Continue with email" secara spesifik menggunakan teks persis
-    const clicked = await page.evaluate(() => {
-      // Cari semua button, lalu filter yang teksnya persis "Continue with email"
-      const buttons = Array.from(document.querySelectorAll('button'));
-      const target = buttons.find(btn => {
-        const text = btn.innerText ? btn.innerText.trim() : '';
-        return text === 'Continue with email';
-      });
-      
-      if (target) {
-        target.click();
-        return true;
-      }
-      
-      // Fallback: jika tidak ketemu, cari elemen apa pun yang mengandung teks tersebut
-      const allElements = Array.from(document.querySelectorAll('*'));
-      const fallbackTarget = allElements.find(el => {
-        const text = el.innerText ? el.innerText.trim() : '';
-        return text === 'Continue with email' && el.tagName !== 'HTML' && el.tagName !== 'BODY';
-      });
-      
-      if (fallbackTarget) {
-        fallbackTarget.click();
-        return true;
-      }
-      
-      return false;
+    // KLIK FISIK: Gunakan elementHandle.click() agar React CapCut merespons
+    console.log('Mencari tombol "Continue with email"...');
+    const emailBtn = await page.waitForSelector('::-p-text(Continue with email)', { 
+      timeout: 20000, 
+      visible: true 
     });
+    
+    await emailBtn.click();
+    console.log('Tombol email diklik, menunggu form input...');
 
-    if (!clicked) {
-      throw new Error('Tombol "Continue with email" tidak ditemukan di halaman.');
-    }
+    // Tunggu form email muncul
+    await page.waitForSelector(
+      'input[type="email"], input[name="email"], input[name="mobileOrEmail"], input[placeholder*="Email" i]',
+      { timeout: 15000, visible: true }
+    );
 
-    // Tunggu form email muncul (biasanya muncul di tempat yang sama setelah klik)
-    await delay(3000);
-
-    // Gunakan waitForFunction untuk memastikan input email benar-benar ada di DOM
-    await page.waitForFunction(() => {
-      return document.querySelector('input[type="email"]') !== null ||
-             document.querySelector('input[name="email"]') !== null ||
-             document.querySelector('input[name="mobileOrEmail"]') !== null ||
-             document.querySelector('input[placeholder*="Email" i]') !== null;
-    }, { timeout: 15000 });
-
-    // Dapatkan elemen input email yang pertama terlihat
-    const emailInput = await page.evaluateHandle(() => {
-      const selectors = [
-        'input[type="email"]',
-        'input[name="email"]',
-        'input[name="mobileOrEmail"]',
-        'input[placeholder*="Email" i]'
-      ];
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el && el.offsetParent !== null) return el; // pastikan terlihat
-      }
-      return null;
-    });
-
-    if (!emailInput) {
-      throw new Error('Form input email tidak muncul setelah mengklik tombol.');
-    }
-
-    // Ketik email
+    // Ambil elemen input email
+    const emailInput = await page.$('input[type="email"], input[name="email"], input[name="mobileOrEmail"], input[placeholder*="Email" i]');
     await emailInput.click({ clickCount: 3 });
-    await emailInput.type(email.address, { delay: 80 });
+    await emailInput.type(email.address, { delay: 100 });
 
     // Cari input password (biasanya muncul bersamaan)
     const pwdInput = await page.$('input[type="password"]');
     if (pwdInput) {
       await pwdInput.click({ clickCount: 3 });
-      await pwdInput.type(accountPassword, { delay: 80 });
+      await pwdInput.type(accountPassword, { delay: 100 });
     }
 
-    // Klik tombol submit/continue berikutnya
-    await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('button'));
-      const target = buttons.find(btn => {
-        const text = btn.innerText ? btn.innerText.toLowerCase() : '';
-        return text.includes('continue') || text.includes('sign up') || text.includes('next');
+    // Klik tombol submit/continue berikutnya (juga secara fisik)
+    let submitBtn = await page.$('button[type="submit"]');
+    if (!submitBtn) {
+      submitBtn = await page.waitForSelector('::-p-text(Continue)', { timeout: 5000 }).catch(() => null);
+    }
+    
+    if (submitBtn) {
+      await submitBtn.click();
+    } else {
+      // Fallback jika tombolnya tidak standar
+      await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const target = buttons.find(btn => btn.innerText.toLowerCase().includes('continue'));
+        if (target) target.click();
       });
-      if (target) target.click();
-    });
+    }
 
     await delay(5000);
 
@@ -139,7 +99,7 @@ async function registerCapCut(email, accountPassword) {
     const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
     await browser.close().catch(() => {});
     
-    const newErr = new Error(`${err.message} | URL: ${currentUrl}\n\nTeks di layar:\n"${bodyText.replace(/\n/g, ' ').substring(0, 200)}..."`);
+    const newErr = new Error(`${err.message} | URL: ${currentUrl}\n\nTeks:\n"${bodyText.replace(/\n/g, ' ').substring(0, 200)}..."`);
     newErr.screenshotPath = screenshotPath;
     throw newErr;
   }
