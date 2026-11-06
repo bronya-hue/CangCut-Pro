@@ -29,8 +29,8 @@ async function registerCapCut(email, accountPassword) {
       timeout: 60000,
     });
 
-    // Tunggu Cloudflare / React load (pengganti waitForNetworkIdle)
-    await delay(5000);
+    // Tunggu Cloudflare / React load
+    await delay(8000);
 
     // Deteksi Cloudflare challenge
     const cfChallenge = await page.$(
@@ -38,27 +38,29 @@ async function registerCapCut(email, accountPassword) {
     );
     if (cfChallenge) {
       await page.screenshot({ path: '/tmp/capcut-cf.png', fullPage: true }).catch(() => {});
-      throw new Error(
-        'Cloudflare challenge terdeteksi — IP Railway diblokir. Perlu proxy residensial atau puppeteer-real-browser.'
-      );
+      throw new Error('Cloudflare challenge terdeteksi — IP Railway diblokir.');
     }
 
-    // Klik opsi "Other login methods" / "Continue with email" (Sintaks Puppeteer)
-    const emailOption = await page.$(
-      'button::-p-text(Email), div[role="button"]::-p-text(Email), ' +
-      'button::-p-text(Continue with email), button::-p-text(Sign up with email), ' +
-      'button::-p-text(Other login methods), div[role="button"]::-p-text(Other login methods), ' +
-      'button::-p-text(More options), div[role="button"]::-p-text(More options), ' +
-      'button::-p-text(Log in another way), div[role="button"]::-p-text(Log in another way)'
-    );
-    if (emailOption) {
-      await emailOption.click().catch(() => {});
-      await delay(3000);
-    }
+    // TRIK BARU: Cari dan klik tombol dengan JavaScript evaluate
+    // Ini jauh lebih kuat daripada selector teks Puppeteer
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('button, a, div, span, p'));
+      const target = elements.find(el => {
+        const text = el.innerText ? el.innerText.toLowerCase() : '';
+        return text.includes('email') || 
+               text.includes('other login') || 
+               text.includes('more options') || 
+               text.includes('continue with');
+      });
+      if (target) target.click();
+    });
 
-    // Selector email yang lebih luas
+    await delay(3000);
+
+    // Selector input yang jauh lebih luas (termasuk mobileOrEmail)
     const emailInput = await page.waitForSelector(
-      'input[type="email"], input[name="email"], input[placeholder*="email" i], input[autocomplete="email"]',
+      'input[type="email"], input[name="email"], input[placeholder*="email" i], ' +
+      'input[autocomplete="email"], input[name="mobileOrEmail"], input[type="text"][placeholder*="Email" i]',
       { timeout: 30000, visible: true }
     );
 
@@ -68,7 +70,6 @@ async function registerCapCut(email, accountPassword) {
     const pwdInput = await page.$('input[type="password"]');
     if (pwdInput) await pwdInput.type(accountPassword, { delay: 80 });
 
-    // Klik tombol Sign up (Sintaks Puppeteer)
     const submitBtn = await page.$(
       'button[type="submit"], button::-p-text(Sign up), button::-p-text(Continue), button::-p-text(Next)'
     );
@@ -88,9 +89,13 @@ async function registerCapCut(email, accountPassword) {
       page,
     };
   } catch (err) {
+    // Ambil screenshot dan URL untuk diagnosa
+    const currentUrl = page.url();
     await page.screenshot({ path: '/tmp/capcut-fail.png', fullPage: true }).catch(() => {});
     await browser.close().catch(() => {});
-    throw err;
+    
+    // Tambahkan URL ke pesan error agar masuk ke Telegram
+    throw new Error(`${err.message} | URL saat ini: ${currentUrl}`);
   }
 }
 
