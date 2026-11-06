@@ -7,6 +7,7 @@ const config = require('../config');
 
 const LAUNCH_OPTS = {
   headless: config.HEADLESS,
+  ...(config.CHROME_PATH ? { executablePath: config.CHROME_PATH } : {}),
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -16,6 +17,9 @@ const LAUNCH_OPTS = {
   ],
   defaultViewport: { width: 1366, height: 768 },
 };
+
+// sisa kode registerCapCut, verifyOtp, claimProTrial, createProAccount
+// TIDAK BERUBAH — cukup ganti LAUNCH_OPTS di atas.
 
 /**
  * Membuat akun CapCut baru.
