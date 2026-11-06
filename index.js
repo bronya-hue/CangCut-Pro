@@ -78,12 +78,13 @@ bot.onText(/\/setreferral\s+(.+)/, async (msg, match) => {
 });
 
 // ---------- Inti farming ----------
-// index.js — tambahkan di atas runFarm
 let farmInProgress = false;
 
 async function runFarm(chatId, count) {
   if (farmInProgress) {
-    return bot.sendMessage(chatId, '⏳ Masih ada farming berjalan. Tunggu selesai dulu.', { reply_markup: mainMenu() });
+    return bot.sendMessage(chatId, '⏳ Masih ada farming berjalan. Tunggu selesai dulu.', {
+      reply_markup: mainMenu(),
+    });
   }
   farmInProgress = true;
 
@@ -92,54 +93,40 @@ async function runFarm(chatId, count) {
 
   try {
     for (let i = 0; i < count; i++) {
-      // ... sisa loop identik dengan sebelumnya ...
+      try {
+        const res = await farmQueue.add(async () => {
+          const inbox = await createInbox();
+          const result = await createProAccount(
+            { address: inbox.address, password: inbox.password },
+            () => fetchLatestOtp(inbox.token, config.OTP_TIMEOUT_MS),
+            referralLink
+          );
+
+          const id = nanoid(10);
+          await addAccount({
+            id,
+            email: result.email,
+            password: result.password,
+            createdAt: new Date().toISOString(),
+            proUntil: result.proUntil ? result.proUntil.toISOString() : null,
+            status: result.proUntil ? 'PRO' : 'FREE',
+            referralLink: referralLink || null,
+          });
+          return result;
+        });
+
+        const sisa = daysLeft(res.proUntil);
+        await bot.sendMessage(
+          chatId,
+          `✅ *Akun ${i + 1}/${count}*\n📧 \`${res.email}\`\n🔑 \`${res.password}\`\n⭐ ${res.proUntil ? 'Pro aktif' : 'Free'} (${sisa} hari)`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (err) {
+        await bot.sendMessage(chatId, `❌ Akun ${i + 1}/${count} gagal: ${err.message}`);
+      }
     }
   } finally {
     farmInProgress = false;
-  }
-
-  await bot.editMessageText(`🏁 Farming selesai (${count} akun).`, {
-    chat_id: chatId,
-    message_id: statusMsg.message_id,
-    reply_markup: mainMenu(),
-  }).catch(() => {});
-}
-async function runFarm(chatId, count) {
-  const referralLink = await getMainReferral();
-  const statusMsg = await bot.sendMessage(chatId, `⏳ Memulai farming ${count} akun...`);
-
-  for (let i = 0; i < count; i++) {
-    try {
-      const res = await farmQueue.add(async () => {
-        const inbox = await createInbox();
-        const result = await createProAccount(
-          { address: inbox.address, password: inbox.password },
-          () => fetchLatestOtp(inbox.token, config.OTP_TIMEOUT_MS),
-          referralLink
-        );
-
-        const id = nanoid(10);
-        await addAccount({
-          id,
-          email: result.email,
-          password: result.password,
-          createdAt: new Date().toISOString(),
-          proUntil: result.proUntil ? result.proUntil.toISOString() : null,
-          status: result.proUntil ? 'PRO' : 'FREE',
-          referralLink: referralLink || null,
-        });
-        return result;
-      });
-
-      const sisa = daysLeft(res.proUntil);
-      await bot.sendMessage(
-        chatId,
-        `✅ *Akun ${i + 1}/${count}*\n📧 \`${res.email}\`\n🔑 \`${res.password}\`\n⭐ ${res.proUntil ? 'Pro aktif' : 'Free'} (${sisa} hari)`,
-        { parse_mode: 'Markdown' }
-      );
-    } catch (err) {
-      await bot.sendMessage(chatId, `❌ Akun ${i + 1}/${count} gagal: ${err.message}`);
-    }
   }
 
   await bot
@@ -162,22 +149,26 @@ bot.on('callback_query', async (q) => {
     if (data === 'noop') return bot.answerCallbackQuery(q.id);
 
     if (data === 'menu:main') {
-      await bot.editMessageText('*CapCut Farm Bot*\n\nPilih aksi:', {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: mainMenu(),
-      }).catch(() => {});
+      await bot
+        .editMessageText('*CapCut Farm Bot*\n\nPilih aksi:', {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'Markdown',
+          reply_markup: mainMenu(),
+        })
+        .catch(() => {});
       return bot.answerCallbackQuery(q.id);
     }
 
     if (data.startsWith('farm:')) {
       const n = Math.min(parseInt(data.split(':')[1], 10) || 1, config.MAX_FARM_BATCH);
       await bot.answerCallbackQuery(q.id, { text: `Memulai ${n} akun...` });
-      await bot.editMessageText(`⏳ Farming ${n} akun dimulai...`, {
-        chat_id: chatId,
-        message_id: messageId,
-      }).catch(() => {});
+      await bot
+        .editMessageText(`⏳ Farming ${n} akun dimulai...`, {
+          chat_id: chatId,
+          message_id: messageId,
+        })
+        .catch(() => {});
       runFarm(chatId, n); // fire and forget
       return;
     }
@@ -187,11 +178,13 @@ bot.on('callback_query', async (q) => {
       const accounts = await getAccounts();
 
       if (accounts.length === 0) {
-        await bot.editMessageText('Belum ada akun. Mulai farming dulu.', {
-          chat_id: chatId,
-          message_id: messageId,
-          reply_markup: mainMenu(),
-        }).catch(() => {});
+        await bot
+          .editMessageText('Belum ada akun. Mulai farming dulu.', {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: mainMenu(),
+          })
+          .catch(() => {});
         return bot.answerCallbackQuery(q.id);
       }
 
@@ -214,19 +207,21 @@ bot.on('callback_query', async (q) => {
       nav.push({ text: `${safePage + 1}/${totalPages}`, callback_data: 'noop' });
       if (safePage < totalPages - 1) nav.push({ text: '➡️', callback_data: `accounts:${safePage + 1}` });
 
-      await bot.editMessageText(text, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [nav, [{ text: '⬅️ Menu', callback_data: 'menu:main' }]] },
-      }).catch(() => {});
+      await bot
+        .editMessageText(text, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [nav, [{ text: '⬅️ Menu', callback_data: 'menu:main' }]] },
+        })
+        .catch(() => {});
       return bot.answerCallbackQuery(q.id);
     }
 
     if (data === 'status') {
       const ref = await getMainReferral();
       const accounts = await getAccounts();
-      const proCount = accounts.filter(a => a.status === 'PRO' && daysLeft(a.proUntil) > 0).length;
+      const proCount = accounts.filter((a) => a.status === 'PRO' && daysLeft(a.proUntil) > 0).length;
 
       const text =
         `📊 *Status*\n\n` +
@@ -234,36 +229,42 @@ bot.on('callback_query', async (q) => {
         `👥 Total akun: ${accounts.length}\n` +
         `⭐ Pro aktif: ${proCount}`;
 
-      await bot.editMessageText(text, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: backMenu(),
-      }).catch(() => {});
+      await bot
+        .editMessageText(text, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'Markdown',
+          reply_markup: backMenu(),
+        })
+        .catch(() => {});
       return bot.answerCallbackQuery(q.id);
     }
 
     if (data === 'referral:set') {
       awaitingReferral.add(chatId);
-      await bot.editMessageText(
-        '🔗 Kirim link referral CapCut Anda sebagai pesan berikutnya.\n\nContoh:\n`https://www.capcut.com/activity/...?invite_code=XXX`',
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [[{ text: '❌ Batal', callback_data: 'menu:main' }]] },
-        }
-      ).catch(() => {});
+      await bot
+        .editMessageText(
+          '🔗 Kirim link referral CapCut Anda sebagai pesan berikutnya.\n\nContoh:\n`https://www.capcut.com/activity/...?invite_code=XXX`',
+          {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: [[{ text: '❌ Batal', callback_data: 'menu:main' }]] },
+          }
+        )
+        .catch(() => {});
       return bot.answerCallbackQuery(q.id);
     }
 
     if (data === 'referral:clear') {
       await setMainReferral(null);
-      await bot.editMessageText('🗑 Referral dihapus.', {
-        chat_id: chatId,
-        message_id: messageId,
-        reply_markup: mainMenu(),
-      }).catch(() => {});
+      await bot
+        .editMessageText('🗑 Referral dihapus.', {
+          chat_id: chatId,
+          message_id: messageId,
+          reply_markup: mainMenu(),
+        })
+        .catch(() => {});
       return bot.answerCallbackQuery(q.id);
     }
 
