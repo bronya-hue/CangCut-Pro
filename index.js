@@ -1,4 +1,5 @@
 // index.js
+CHROME_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
 const TelegramBot = require('node-telegram-bot-api');
 const { nanoid } = require('nanoid');
 
