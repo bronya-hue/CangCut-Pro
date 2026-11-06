@@ -21,10 +21,43 @@ const LAUNCH_OPTS = {
 async function registerCapCut(email, accountPassword) {
   const browser = await puppeteer.launch(LAUNCH_OPTS);
   const page = await browser.newPage();
-  try {
-    await page.goto(`${config.CAPCUT_BASE}/signup`, { waitUntil: 'networkidle2', timeout: 60000 });
 
-    const emailInput = await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 20000 });
+  try {
+    await page.goto(`${config.CAPCUT_BASE}/signup`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000,
+    });
+
+    // Tunggu jaringan tenang (Cloudflare challenge sering selesai di sini)
+    await page.waitForNetworkIdle({ idleTime: 3000, timeout: 30000 }).catch(() => {});
+
+    // Deteksi Cloudflare challenge
+    const cfChallenge = await page.$(
+      '#challenge-form, #cf-challenge-running, .cf-browser-verification, iframe[src*="challenges.cloudflare.com"]'
+    );
+    if (cfChallenge) {
+      await page.screenshot({ path: '/tmp/capcut-cf.png', fullPage: true }).catch(() => {});
+      throw new Error('Cloudflare challenge terdeteksi — IP Railway diblokir. Perlu proxy residensial atau puppeteer-real-browser.');
+    }
+
+    // Coba klik opsi email jika tersembunyi
+    const emailOption = await page.$(
+      'button:has-text("Email"), button:has-text("email"), ' +
+      'div[role="button"]:has-text("Email"), ' +
+      'text/Continue with email, text/Sign up with email'
+    );
+    if (emailOption) {
+      await emailOption.click().catch(() => {});
+      await page.waitForNetworkIdle({ idleTime: 2000, timeout: 15000 }).catch(() => {});
+    }
+
+    // Selector email yang jauh lebih luas
+    const emailInput = await page.waitForSelector(
+      'input[type="email"], input[name="email"], input[placeholder*="email" i], input[autocomplete="email"]',
+      { timeout: 30000, visible: true }
+    );
+
+    await emailInput.click({ clickCount: 3 });
     await emailInput.type(email.address, { delay: 80 });
 
     const pwdInput = await page.$('input[type="password"]');
@@ -38,36 +71,11 @@ async function registerCapCut(email, accountPassword) {
     const otpInput = await page.$('input[autocomplete="one-time-code"], input[name*="otp"], input[name*="code"]');
     return { email: email.address, password: accountPassword, needsOtpInPage: !!otpInput, browser, page };
   } catch (err) {
+    // Simpan screenshot untuk diagnosa
+    await page.screenshot({ path: '/tmp/capcut-fail.png', fullPage: true }).catch(() => {});
     await browser.close();
     throw err;
   }
-}
-
-async function verifyOtp(page, otp) {
-  const otpInput = await page.$('input[autocomplete="one-time-code"], input[name*="otp"], input[name*="code"]');
-  if (!otpInput) throw new Error('Field OTP tidak ditemukan di halaman');
-  await otpInput.click({ clickCount: 3 });
-  await otpInput.type(otp, { delay: 100 });
-  const verifyBtn = await page.$('button[type="submit"], button:has-text("Verify"), button:has-text("Confirm")');
-  if (verifyBtn) await verifyBtn.click();
-  await page.waitForNetworkIdle({ idleTime: 2000, timeout: 30000 }).catch(() => {});
-}
-
-async function claimProTrial(page) {
-  try {
-    const claimBtn = await page.$(
-      'a[href*="trial"], button:has-text("Try Pro"), button:has-text("Claim"), a:has-text("Pro")'
-    );
-    if (claimBtn) {
-      await claimBtn.click();
-      await page.waitForNetworkIdle({ idleTime: 3000, timeout: 30000 }).catch(() => {});
-    }
-    const proIndicator = await page.$('[class*="pro-badge"], [data-testid*="pro"]');
-    if (proIndicator) {
-      return new Date(Date.now() + 7 * 86400000);
-    }
-  } catch (_) {}
-  return null;
 }
 
 async function applyReferral(browser, referralLink) {
