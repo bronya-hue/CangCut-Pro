@@ -78,6 +78,32 @@ bot.onText(/\/setreferral\s+(.+)/, async (msg, match) => {
 });
 
 // ---------- Inti farming ----------
+// index.js — tambahkan di atas runFarm
+let farmInProgress = false;
+
+async function runFarm(chatId, count) {
+  if (farmInProgress) {
+    return bot.sendMessage(chatId, '⏳ Masih ada farming berjalan. Tunggu selesai dulu.', { reply_markup: mainMenu() });
+  }
+  farmInProgress = true;
+
+  const referralLink = await getMainReferral();
+  const statusMsg = await bot.sendMessage(chatId, `⏳ Memulai farming ${count} akun...`);
+
+  try {
+    for (let i = 0; i < count; i++) {
+      // ... sisa loop identik dengan sebelumnya ...
+    }
+  } finally {
+    farmInProgress = false;
+  }
+
+  await bot.editMessageText(`🏁 Farming selesai (${count} akun).`, {
+    chat_id: chatId,
+    message_id: statusMsg.message_id,
+    reply_markup: mainMenu(),
+  }).catch(() => {});
+}
 async function runFarm(chatId, count) {
   const referralLink = await getMainReferral();
   const statusMsg = await bot.sendMessage(chatId, `⏳ Memulai farming ${count} akun...`);
