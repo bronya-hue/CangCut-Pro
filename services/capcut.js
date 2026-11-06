@@ -111,19 +111,26 @@ async function claimProTrial(page) {
 /**
  * Alur lengkap: registrasi → OTP → klaim trial.
  */
-async function createProAccount(emailCreds, otpFetcher) {
+// Di dalam createProAccount, setelah browser dibuat tetapi sebelum registerCapCut:
+const { applyReferral } = require('./referral');
+
+async function createProAccount(emailCreds, otpFetcher, referralLink = null) {
   const accountPassword = `Cp${Math.random().toString(36).slice(2, 12)}!`;
+
+  // Jalankan registrasi (yang membuka browser)
   const session = await registerCapCut(emailCreds, accountPassword);
 
   try {
-    let proUntil = null;
+    // Terapkan referral di tab terpisah
+    if (referralLink) {
+      await applyReferral(session.browser, referralLink);
+    }
 
+    let proUntil = null;
     if (session.needsOtpInPage) {
       const otp = await otpFetcher();
       await verifyOtp(session.page, otp);
     }
-
-    // Setelah verifikasi, coba klaim trial
     proUntil = await claimProTrial(session.page);
 
     return {
@@ -135,5 +142,3 @@ async function createProAccount(emailCreds, otpFetcher) {
     await session.browser.close();
   }
 }
-
-module.exports = { createProAccount };
