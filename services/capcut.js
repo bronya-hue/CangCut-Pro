@@ -4,6 +4,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 const config = require('../config');
+const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
 const LAUNCH_OPTS = {
   headless: config.HEADLESS,
@@ -28,8 +29,8 @@ async function registerCapCut(email, accountPassword) {
       timeout: 60000,
     });
 
-    // Tunggu jaringan tenang (Cloudflare challenge sering selesai di sini)
-    await page.waitForNetworkIdle({ idleTime: 3000, timeout: 30000 }).catch(() => {});
+    // Tunggu Cloudflare / React load (pengganti waitForNetworkIdle)
+    await delay(5000);
 
     // Deteksi Cloudflare challenge
     const cfChallenge = await page.$(
@@ -42,16 +43,17 @@ async function registerCapCut(email, accountPassword) {
       );
     }
 
-    // Klik opsi "Other login methods" / "Continue with email" jika ada
+    // Klik opsi "Other login methods" / "Continue with email" (Sintaks Puppeteer)
     const emailOption = await page.$(
-      'button:has-text("Email"), button:has-text("email"), ' +
-        'div[role="button"]:has-text("Email"), ' +
-        'text/Continue with email, text/Sign up with email, ' +
-        'text/Other login methods, text/More options, text/Log in another way'
+      'button::-p-text(Email), div[role="button"]::-p-text(Email), ' +
+      'button::-p-text(Continue with email), button::-p-text(Sign up with email), ' +
+      'button::-p-text(Other login methods), div[role="button"]::-p-text(Other login methods), ' +
+      'button::-p-text(More options), div[role="button"]::-p-text(More options), ' +
+      'button::-p-text(Log in another way), div[role="button"]::-p-text(Log in another way)'
     );
     if (emailOption) {
       await emailOption.click().catch(() => {});
-      await page.waitForNetworkIdle({ idleTime: 2000, timeout: 15000 }).catch(() => {});
+      await delay(3000);
     }
 
     // Selector email yang lebih luas
@@ -66,12 +68,13 @@ async function registerCapCut(email, accountPassword) {
     const pwdInput = await page.$('input[type="password"]');
     if (pwdInput) await pwdInput.type(accountPassword, { delay: 80 });
 
+    // Klik tombol Sign up (Sintaks Puppeteer)
     const submitBtn = await page.$(
-      'button[type="submit"], button:has-text("Sign up"), button:has-text("Continue")'
+      'button[type="submit"], button::-p-text(Sign up), button::-p-text(Continue), button::-p-text(Next)'
     );
     if (submitBtn) await submitBtn.click();
 
-    await page.waitForNetworkIdle({ idleTime: 2000, timeout: 30000 }).catch(() => {});
+    await delay(5000);
 
     const otpInput = await page.$(
       'input[autocomplete="one-time-code"], input[name*="otp"], input[name*="code"]'
@@ -101,21 +104,21 @@ async function verifyOtp(page, otp) {
   await otpInput.type(otp, { delay: 100 });
 
   const verifyBtn = await page.$(
-    'button[type="submit"], button:has-text("Verify"), button:has-text("Confirm")'
+    'button[type="submit"], button::-p-text(Verify), button::-p-text(Confirm), button::-p-text(Next)'
   );
   if (verifyBtn) await verifyBtn.click();
 
-  await page.waitForNetworkIdle({ idleTime: 2000, timeout: 30000 }).catch(() => {});
+  await delay(5000);
 }
 
 async function claimProTrial(page) {
   try {
     const claimBtn = await page.$(
-      'a[href*="trial"], button:has-text("Try Pro"), button:has-text("Claim"), a:has-text("Pro")'
+      'a[href*="trial"], button::-p-text(Try Pro), button::-p-text(Claim), a::-p-text(Pro)'
     );
     if (claimBtn) {
       await claimBtn.click();
-      await page.waitForNetworkIdle({ idleTime: 3000, timeout: 30000 }).catch(() => {});
+      await delay(5000);
     }
 
     const proIndicator = await page.$('[class*="pro-badge"], [data-testid*="pro"]');
@@ -133,7 +136,7 @@ async function applyReferral(browser, referralLink) {
   const page = await browser.newPage();
   try {
     await page.goto(referralLink, { waitUntil: 'networkidle2', timeout: 45000 });
-    await new Promise(r => setTimeout(r, 5000));
+    await delay(5000);
   } catch (_) {
     // abaikan
   } finally {
