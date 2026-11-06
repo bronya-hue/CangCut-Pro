@@ -29,20 +29,25 @@ async function registerCapCut(email, accountPassword) {
       timeout: 60000,
     });
 
-    // Tunggu Cloudflare / React load
+    // Tunggu React render
     await delay(8000);
 
-    // Deteksi Cloudflare challenge
-    const cfChallenge = await page.$(
-      '#challenge-form, #cf-challenge-running, .cf-browser-verification, iframe[src*="challenges.cloudflare.com"]'
-    );
-    if (cfChallenge) {
-      await page.screenshot({ path: '/tmp/capcut-cf.png', fullPage: true }).catch(() => {});
-      throw new Error('Cloudflare challenge terdeteksi — IP Railway diblokir.');
+    // 1. Coba cari iframe dan beralih ke dalamnya jika ada
+    for (const frame of page.mainFrame().childFrames()) {
+      const url = frame.url();
+      if (url.includes('login') || url.includes('signup') || url.includes('auth')) {
+        await frame.evaluate(() => {
+          const elements = Array.from(document.querySelectorAll('button, a, div, span, p'));
+          const target = elements.find(el => {
+            const text = el.innerText ? el.innerText.toLowerCase() : '';
+            return text.includes('email') || text.includes('continue');
+          });
+          if (target) target.click();
+        }).catch(() => {});
+      }
     }
 
-    // TRIK BARU: Cari dan klik tombol dengan JavaScript evaluate
-    // Ini jauh lebih kuat daripada selector teks Puppeteer
+    // 2. Klik paksa di frame utama (jika form tidak di iframe)
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('button, a, div, span, p'));
       const target = elements.find(el => {
@@ -53,16 +58,31 @@ async function registerCapCut(email, accountPassword) {
                text.includes('continue with');
       });
       if (target) target.click();
-    });
+    }).catch(() => {});
 
     await delay(3000);
 
-    // Selector input yang jauh lebih luas (termasuk mobileOrEmail)
-    const emailInput = await page.waitForSelector(
-      'input[type="email"], input[name="email"], input[placeholder*="email" i], ' +
-      'input[autocomplete="email"], input[name="mobileOrEmail"], input[type="text"][placeholder*="Email" i]',
-      { timeout: 30000, visible: true }
-    );
+    // 3. Cari input email (termasuk di dalam iframe)
+    let emailInput = null;
+    try {
+      emailInput = await page.waitForSelector(
+        'input[type="email"], input[name="email"], input[placeholder*="email" i], ' +
+        'input[autocomplete="email"], input[name="mobileOrEmail"], input[type="text"][placeholder*="Email" i]',
+        { timeout: 15000, visible: true }
+      );
+    } catch (e) {
+      // Jika gagal di main frame, coba cari di semua iframe
+      for (const frame of page.mainFrame().childFrames()) {
+        try {
+          emailInput = await frame.waitForSelector(
+            'input[type="email"], input[name="email"], input[placeholder*="email" i], input[name="mobileOrEmail"]',
+            { timeout: 5000, visible: true }
+          );
+          if (emailInput) break;
+        } catch (_) {}
+      }
+      if (!emailInput) throw e; // Lemparkan error asli jika semua iframe gagal
+    }
 
     await emailInput.click({ clickCount: 3 });
     await emailInput.type(email.address, { delay: 80 });
@@ -89,13 +109,20 @@ async function registerCapCut(email, accountPassword) {
       page,
     };
   } catch (err) {
-    // Ambil screenshot dan URL untuk diagnosa
     const currentUrl = page.url();
-    await page.screenshot({ path: '/tmp/capcut-fail.png', fullPage: true }).catch(() => {});
+    const screenshotPath = `/tmp/capcut-fail-${Date.now()}.png`;
+    
+    // Ambil Screenshot
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+    
+    // Ambil Teks di layar untuk diagnosa
+    const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    
     await browser.close().catch(() => {});
     
-    // Tambahkan URL ke pesan error agar masuk ke Telegram
-    throw new Error(`${err.message} | URL saat ini: ${currentUrl}`);
+    const newErr = new Error(`${err.message} | URL: ${currentUrl}\n\nTeks di layar:\n"${bodyText.replace(/\n/g, ' ').substring(0, 200)}..."`);
+    newErr.screenshotPath = screenshotPath;
+    throw newErr;
   }
 }
 
@@ -130,9 +157,7 @@ async function claimProTrial(page) {
     if (proIndicator) {
       return new Date(Date.now() + 7 * 86400000);
     }
-  } catch (_) {
-    // abaikan
-  }
+  } catch (_) {}
   return null;
 }
 
@@ -143,7 +168,6 @@ async function applyReferral(browser, referralLink) {
     await page.goto(referralLink, { waitUntil: 'networkidle2', timeout: 45000 });
     await delay(5000);
   } catch (_) {
-    // abaikan
   } finally {
     await page.close().catch(() => {});
   }
